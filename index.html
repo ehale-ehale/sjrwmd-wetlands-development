@@ -205,44 +205,90 @@
     // --- Popups on click (points + polygons) ---
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
 
-    function popupHTML(props) {
-      // Adjust to the field names you kept in step 1
-      const p = props || {};
-      const rows = [
-        ["Permit #", p.PERMIT_NUM],
-        ["Project", p.PROJECT_NAME],
-        ["Applicant", p.APPLICANT],
-        ["Status", p.STATUS],
-        ["County", p.COUNTY],
-        ["Received", p.RECEIVED_DATE],
-        ["Activity", p.ACTIVITY]
-      ].filter(([_, v]) => v != null && v !== "");
-      return `
-        <div style="font: 12px/1.3 system-ui, sans-serif; max-width: 260px">
-          <div style="font-weight:600;margin-bottom:4px;">ERP Permit</div>
-          <table style="border-collapse:collapse;">
-            ${rows.map(([k,v])=>`<tr><td style="padding-right:6px;color:#666;">${k}</td><td>${String(v)}</td></tr>`).join("")}
-          </table>
-        </div>`;
+  // Map from label → property key in your tiles
+  const ERP_FIELDS = [
+    ["Status",        "permit_status"],
+    ["Applicant",     "applicant"],
+    ["Permit ID",     "cur_prmt_id"],
+    ["Project",       "prmt_proj_nm"],
+    ["Created",       "created_date"],
+    ["Link",          "link"],          // special handling below
+  ];
+
+  function fmtDateMaybe(v) {
+    // Pass strings through; lightly format YYYY-MM-DD if present
+    if (!v) return v;
+    const m = String(v).match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (!m) return v;
+    const [_, y, mo, d] = m;
+    return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  }
+
+  function popupHTML(props) {
+    const rows = [];
+    for (const [label, key] of ERP_FIELDS) {
+      let val = props?.[key];
+      if (val == null || val === "") continue;
+
+      if (key === "created_date") val = fmtDateMaybe(val);
+
+      if (key === "link") {
+        const href = String(val);
+        // Only render as a link if it looks like a URL
+        if (/^https?:\/\//i.test(href)) {
+          val = `<a href="${href}" target="_blank" rel="noopener noreferrer">Open permit</a>`;
+        }
+      }
+
+      rows.push(
+        `<tr>
+           <td style="padding-right:6px;color:#666;vertical-align:top;">${label}</td>
+           <td style="vertical-align:top;">${String(val)}</td>
+         </tr>`
+      );
     }
 
-    function clickHandler(e) {
-      if (!e.features || !e.features.length) return;
-      const f = e.features[0];
-      const coords = e.lngLat;
-      popup.setLngLat(coords).setHTML(popupHTML(f.properties)).addTo(map);
+    // Fallback: if none of the expected keys exist, dump all properties so you can see what’s inside
+    if (rows.length === 0 && props) {
+      for (const [k,v] of Object.entries(props)) {
+        rows.push(
+          `<tr>
+             <td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td>
+             <td style="vertical-align:top;">${String(v)}</td>
+           </tr>`
+        );
+      }
     }
 
-    map.on("click", "erp-points", clickHandler);
-    map.on("click", "erp-fill", clickHandler);
-    map.on("click", "erp-outline", clickHandler);
+    return `
+      <div style="font: 12px/1.3 system-ui, sans-serif; max-width: 280px">
+        <div style="font-weight:600;margin-bottom:4px;">ERP Permit</div>
+        <table style="border-collapse:collapse;">${rows.join("")}</table>
+      </div>`;
+  }
 
-    // Optional: pointer cursor on hover
-    ["erp-points", "erp-fill", "erp-outline"].forEach(id => {
-      map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer");
-      map.on("mouseleave", id, () => map.getCanvas().style.cursor = "");
-    });
-  });
+  function clickHandler(e) {
+    if (!e.features?.length) return;
+    const f = e.features[0];
+    popup.setLngLat(e.lngLat).setHTML(popupHTML(f.properties || {})).addTo(map);
+  }
+
+  // Attach to your ERP layers (keep whatever layers you added)
+  map.on("click", "erp-points", clickHandler);
+  map.on("click", "erp-fill",   clickHandler);
+  map.on("click", "erp-outline",clickHandler);
+
+  // Optional: quick one-time console peek to verify property names on first click
+  let __peeked = false;
+  function debugPeek(e){
+    if(!__peeked && e.features?.[0]) {
+      console.log("ERP properties:", e.features[0].properties);
+      __peeked = true;
+    }
+  }
+  map.on("click", "erp-points", debugPeek);
+  map.on("click", "erp-fill",   debugPeek);
+  map.on("click", "erp-outline",debugPeek);
 </script>
 </body>
 </html>
