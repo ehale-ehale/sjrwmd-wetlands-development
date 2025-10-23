@@ -265,18 +265,21 @@
     // 5) Popups — Builder points: show matching_grantor1namefull (+ address if present)
     const bldPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
 
+    // Replace your builderHTML function with this:
     function builderHTML(p) {
       const rows = [];
-      if (p?.matching_grantor1namefull) rows.push(["Builder", p.matching_grantor1namefull]);
-      if (p?.example_address)           rows.push(["Address", p.example_address]);
-      if (p?.full_address)              rows.push(["Full Address", p.full_address]);
-
-      const htmlRows = rows.length
-        ? rows.map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`).join("")
-        : Object.entries(p||{}).map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`).join("");
-
+      if (p?.builder)               rows.push(["builder", p.builder]);
+      if (p?.address)               rows.push(["address", p.address]);
+      if (p?.subdivision)           rows.push(["subdivision", p.subdivision]);
+      if (p?.counta_of_attom_id!=null && p.counta_of_attom_id!=="")
+                                    rows.push(["counta of attom_id", p.counta_of_attom_id]);
+    
+      const htmlRows = rows.map(([k,v]) =>
+        `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`
+      ).join("");
+    
       return `
-        <div style="font:12px/1.3 system-ui,sans-serif;max-width:280px">
+        <div style="font:12px/1.3 system-ui,sans-serif;max-width:300px">
           <div style="font-weight:600;margin-bottom:4px;">Builder Address</div>
           <table style="border-collapse:collapse;">${htmlRows}</table>
         </div>`;
