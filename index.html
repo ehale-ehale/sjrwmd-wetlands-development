@@ -152,18 +152,11 @@
 <script>
   // === ERP + Builder from combined PMTiles ===
   // Make sure this points to your uploaded file:
-  const COMBINED_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/blob/main/combined.pmtiles";
+  const COMBINED_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/combined.pmtiles";
 
   // Layer names (from tippecanoe -L erp_permits:..., -L builder_addresses:...)
   const LAYER_ERP     = "erp_permits";
   const LAYER_BUILDER = "builder_addresses";
-
-  // Register pmtiles protocol once (if not already done above)
-  if (!maplibregl.protocolRegistered) {
-    let protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol("pmtiles", protocol.tile);
-    maplibregl.protocolRegistered = true;
-  }
 
   map.on("load", () => {
     // 1) Add the combined vector source
