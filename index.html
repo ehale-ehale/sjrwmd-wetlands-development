@@ -150,230 +150,156 @@
   });
 </script>
 <script>
-  // ADD THIS: the ERP source (second .pmtiles)
-  const ERP_SOURCE_ID = "erp";
-  const ERP_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/erp.pmtiles";
-  const ERP_SOURCE_LAYER = "erp"; // we set this with -l erp in tippecanoe
+  // === ERP + Builder from combined PMTiles ===
+  // Make sure this points to your uploaded file:
+  const COMBINED_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/blob/main/combined.pmtiles";
 
-  // Wait for map load before adding ERP layers
+  // Layer names (from tippecanoe -L erp_permits:..., -L builder_addresses:...)
+  const LAYER_ERP     = "erp_permits";
+  const LAYER_BUILDER = "builder_addresses";
+
+  // Register pmtiles protocol once (if not already done above)
+  if (!maplibregl.protocolRegistered) {
+    let protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+    maplibregl.protocolRegistered = true;
+  }
+
   map.on("load", () => {
-    // Register the ERP source
-    map.addSource(ERP_SOURCE_ID, {
-      type: "vector",
-      url: ERP_PMTILES_URL
-    });
+    // 1) Add the combined vector source
+    map.addSource("combined", { type: "vector", url: COMBINED_PMTILES_URL });
 
-    // If your ERP contains points:
+    // 2) Builder points (magenta dots)
     map.addLayer({
-      id: "erp-points",
+      id: "builder-points",
       type: "circle",
-      source: ERP_SOURCE_ID,
-      "source-layer": ERP_SOURCE_LAYER,
+      source: "combined",
+      "source-layer": LAYER_BUILDER,
+      filter: ["==", ["geometry-type"], "Point"],
       paint: {
         "circle-radius": [
           "interpolate", ["linear"], ["zoom"],
-          5, 2,
-          10, 4,
-          14, 6
+          5, 3,
+          10, 5,
+          14, 8
         ],
-        "circle-opacity": 0.9,
-        "circle-stroke-color": "#1c3d5a",
-        "circle-stroke-width": 1,
-        "circle-color": "#61a5ff"
-      },
-      filter: ["==", ["geometry-type"], "Point"]
+        "circle-color": "#ff00c8",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.2,
+        "circle-opacity": 0.9
+      }
     });
 
-    // If your ERP also has polygons (optional):
+    // 3) ERP polygons — fill color depends on whether they contain a builder address
+    //     has_builder_addr === true  -> pink
+    //     otherwise                  -> orange
     map.addLayer({
       id: "erp-fill",
       type: "fill",
-      source: ERP_SOURCE_ID,
-      "source-layer": ERP_SOURCE_LAYER,
-      paint: { "fill-color": "#ffd166", "fill-opacity": 0.35 },
-      filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]
+      source: "combined",
+      "source-layer": LAYER_ERP,
+      filter: ["in", ["geometry-type"], ["literal", ["Polygon","MultiPolygon"]]],
+      paint: {
+        "fill-color": [
+          "case",
+          ["==", ["get","has_builder_addr"], true], "#ff4fa3",  // pink
+          "#ff9f1c"                                            // orange
+        ],
+        "fill-opacity": 0.35
+      }
     });
+
     map.addLayer({
       id: "erp-outline",
       type: "line",
-      source: ERP_SOURCE_ID,
-      "source-layer": ERP_SOURCE_LAYER,
-      paint: { "line-color": "#b8860b", "line-width": 0.8 },
-      filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]]
+      source: "combined",
+      "source-layer": LAYER_ERP,
+      filter: ["in", ["geometry-type"], ["literal", ["Polygon","MultiPolygon"]]],
+      paint: { "line-color": "#8a6f00", "line-width": 0.8 }
     });
 
-    // --- Popups on click (points + polygons) ---
-    const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
+    // 4) Popups — ERP polygons:
+    //    Always show: permit_status, applicant, cur_prmt_id, link, prmt_proj_nm, created_date
+    //    If has_builder_addr is true, also show builder_names
+    const erpPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
 
-  // Map from label → property key in your tiles
-  const ERP_FIELDS = [
-    ["Status",        "permit_status"],
-    ["Applicant",     "applicant"],
-    ["Permit ID",     "cur_prmt_id"],
-    ["Project",       "prmt_proj_nm"],
-    ["Created",       "created_date"],
-    ["Link",          "link"],          // special handling below
-  ];
-
-  function fmtDateMaybe(v) {
-    // Pass strings through; lightly format YYYY-MM-DD if present
-    if (!v) return v;
-    const m = String(v).match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-    if (!m) return v;
-    const [_, y, mo, d] = m;
-    return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-  }
-
-  function popupHTML(props) {
-    const rows = [];
-    for (const [label, key] of ERP_FIELDS) {
-      let val = props?.[key];
-      if (val == null || val === "") continue;
-
-      if (key === "created_date") val = fmtDateMaybe(val);
-
-      if (key === "link") {
-        const href = String(val);
-        // Only render as a link if it looks like a URL
-        if (/^https?:\/\//i.test(href)) {
-          val = `<a href="${href}" target="_blank" rel="noopener noreferrer">Open permit</a>`;
-        }
-      }
-
-      rows.push(
-        `<tr>
-           <td style="padding-right:6px;color:#666;vertical-align:top;">${label}</td>
-           <td style="vertical-align:top;">${String(val)}</td>
-         </tr>`
-      );
+    function fmtDate(v){
+      if (!v) return "";
+      const m = String(v).match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      if (!m) return String(v);
+      const [_, y, mo, d] = m;
+      return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     }
 
-    // Fallback: if none of the expected keys exist, dump all properties so you can see what’s inside
-    if (rows.length === 0 && props) {
-      for (const [k,v] of Object.entries(props)) {
-        rows.push(
-          `<tr>
-             <td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td>
-             <td style="vertical-align:top;">${String(v)}</td>
-           </tr>`
-        );
+    function erpHTML(p) {
+      if (!p) return "";
+      const baseRows = [
+        ["Status",    p.permit_status],
+        ["Applicant", p.applicant],
+        ["Permit ID", p.cur_prmt_id],
+        ["Project",   p.prmt_proj_nm],
+        ["Created",   fmtDate(p.created_date)],
+        ["Link",      p.link && /^https?:\/\//i.test(p.link) ? `<a href="${p.link}" target="_blank" rel="noopener">Open permit</a>` : (p.link||"")]
+      ];
+
+      // include builder only if present/flagged
+      const rows = [...baseRows];
+      if (p.has_builder_addr && p.builder_names) {
+        rows.unshift(["Builder", p.builder_names]); // put builder at top
       }
-    }
 
-    return `
-      <div style="font: 12px/1.3 system-ui, sans-serif; max-width: 280px">
-        <div style="font-weight:600;margin-bottom:4px;">ERP Permit</div>
-        <table style="border-collapse:collapse;">${rows.join("")}</table>
-      </div>`;
-  }
-
-  function clickHandler(e) {
-    if (!e.features?.length) return;
-    const f = e.features[0];
-    popup.setLngLat(e.lngLat).setHTML(popupHTML(f.properties || {})).addTo(map);
-  }
-
-  // Attach to your ERP layers (keep whatever layers you added)
-  map.on("click", "erp-points", clickHandler);
-  map.on("click", "erp-fill",   clickHandler);
-  map.on("click", "erp-outline",clickHandler);
-
-  // Optional: quick one-time console peek to verify property names on first click
-  let __peeked = false;
-  function debugPeek(e){
-    if(!__peeked && e.features?.[0]) {
-      console.log("ERP properties:", e.features[0].properties);
-      __peeked = true;
-    }
-  }
-  map.on("click", "erp-points", debugPeek);
-  map.on("click", "erp-fill",   debugPeek);
-  map.on("click", "erp-outline",debugPeek);
-  });
-</script>
-<script>
-  // --- Subdivisions vector tiles (third source) ---
-  const SUBDIV_SOURCE_ID    = "subdivisions";
-  const SUBDIV_PMTILES_URL  = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/volusia_subdivisions.pmtiles";
-  const SUBDIV_SOURCE_LAYER = "subdivisions"; // from: tippecanoe -l subdivisions
-
-  map.on("load", () => {
-    // 1) Source
-    map.addSource(SUBDIV_SOURCE_ID, {
-      type: "vector",
-      url: SUBDIV_PMTILES_URL
-    });
-
-    // 2) Circle layer for points
-    map.addLayer({
-      id: "subdiv-points",
-      type: "circle",
-      source: SUBDIV_SOURCE_ID,
-      "source-layer": SUBDIV_SOURCE_LAYER,
-      filter: ["==", ["geometry-type"], "Point"],
-      paint: {
-        // MUCH larger symbols
-        "circle-radius": [
-          "interpolate", ["linear"], ["zoom"],
-          5, 4,
-          10, 6,
-          14, 10
-        ],
-        // Bright magenta so it pops against greens/yellows
-        "circle-color": "#ff00ff",
-        "circle-opacity": 0.9,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 1.2
-      }
-    });
-
-
-    // 3) Popup
-    const subdivPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
-
-    // Helper: pick first non-empty value from possible keys
-    function pick(props, keys) {
-      for (const k of keys) {
-        const v = props?.[k];
-        if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-      }
-      return "";
-    }
-
-    function subdivHTML(props) {
-      const legalSubdivision = pick(props, ["legal_subdivision","legalsubdivision"]);
-      const attomCount       = pick(props, ["attom_id_count","counta of attom_id"]);
-      const address          = pick(props, ["address","example_address"]);
-      const matchingGrantor  = pick(props, ["grantor1_full_name","matching_grantor1namefull"]);
-
-      const rows = [
-        ["Legal Subdivision", legalSubdivision],
-        ["counta of attom_id", attomCount],
-        ["Address", address],
-        ["Matching Grantor", matchingGrantor],
-      ].filter(([,v]) => v !== "");
-
-      // Fallback: if nothing matched, show all properties to debug keys
-      const tableRows = rows.length
-        ? rows.map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`).join("")
-        : Object.entries(props || {}).map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`).join("");
+      const htmlRows = rows
+        .filter(([,v]) => v !== undefined && v !== null && String(v) !== "")
+        .map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`)
+        .join("");
 
       return `
-        <div style="font:12px/1.3 system-ui,sans-serif;max-width:280px">
-          <div style="font-weight:600;margin-bottom:4px;">Subdivision</div>
-          <table style="border-collapse:collapse;">${tableRows}</table>
+        <div style="font:12px/1.3 system-ui,sans-serif;max-width:300px">
+          <div style="font-weight:600;margin-bottom:4px;">ERP Permit</div>
+          <table style="border-collapse:collapse;">${htmlRows}</table>
         </div>`;
     }
 
-    function onSubdivClick(e) {
+    function onErpClick(e){
       if (!e.features?.length) return;
       const f = e.features[0];
-      subdivPopup.setLngLat(e.lngLat).setHTML(subdivHTML(f.properties)).addTo(map);
+      erpPopup.setLngLat(e.lngLat).setHTML(erpHTML(f.properties)).addTo(map);
     }
 
-    map.on("click", "subdiv-points", onSubdivClick);
-    map.on("mouseenter", "subdiv-points", () => map.getCanvas().style.cursor = "pointer");
-    map.on("mouseleave", "subdiv-points", () => map.getCanvas().style.cursor = "");
+    map.on("click", "erp-fill", onErpClick);
+    map.on("click", "erp-outline", onErpClick);
+
+    // 5) Popups — Builder points: show matching_grantor1namefull (+ address if present)
+    const bldPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
+
+    function builderHTML(p) {
+      const rows = [];
+      if (p?.matching_grantor1namefull) rows.push(["Builder", p.matching_grantor1namefull]);
+      if (p?.example_address)           rows.push(["Address", p.example_address]);
+      if (p?.full_address)              rows.push(["Full Address", p.full_address]);
+
+      const htmlRows = rows.length
+        ? rows.map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`).join("")
+        : Object.entries(p||{}).map(([k,v]) => `<tr><td style="padding-right:6px;color:#666;vertical-align:top;">${k}</td><td>${String(v)}</td></tr>`).join("");
+
+      return `
+        <div style="font:12px/1.3 system-ui,sans-serif;max-width:280px">
+          <div style="font-weight:600;margin-bottom:4px;">Builder Address</div>
+          <table style="border-collapse:collapse;">${htmlRows}</table>
+        </div>`;
+    }
+
+    map.on("click", "builder-points", (e) => {
+      if (!e.features?.length) return;
+      const f = e.features[0];
+      bldPopup.setLngLat(e.lngLat).setHTML(builderHTML(f.properties)).addTo(map);
+    });
+
+    // Cursor affordance
+    ["builder-points","erp-fill","erp-outline"].forEach(id => {
+      map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer");
+      map.on("mouseleave", id, () => map.getCanvas().style.cursor = "");
+    });
   });
 </script>
 </body>
