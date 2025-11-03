@@ -28,6 +28,25 @@
     <button id="clearAll">Clear all</button>
   </div>
   <div id="typeList">Loading…</div>
+  <div class="hr" style="height:1px;background:#eee;margin:10px 0;"></div>
+  <h3>ERP permits</h3>
+  
+  <div class="row">
+    <span class="swatch" style="background:#ff4fa3"></span>
+    <input id="toggleBuilder" type="checkbox" checked>
+    <label for="toggleBuilder">Builder ERPs (pink)</label>
+  </div>
+  
+  <div class="row">
+    <span class="swatch" style="background:#ff9f1c"></span>
+    <input id="toggleNonBuilder" type="checkbox" checked>
+    <label for="toggleNonBuilder">Other ERPs (orange)</label>
+  </div>
+  
+  <div class="btns" style="margin-top:6px">
+    <button id="showOnlyBuilder">Show only builder</button>
+    <button id="showAllErp">Show all ERPs</button>
+  </div>
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -261,6 +280,70 @@
 
     map.on("click", "erp-fill", onErpClick);
     map.on("click", "erp-outline", onErpClick);
+
+    // -------- ERP visibility toggles (pink/orange) ----------
+    const PINK   = "#ff4fa3";
+    const ORANGE = "#ff9f1c";
+    
+    // UI state
+    let showBuilder   = true;  // pink
+    let showNonBuilder = true; // orange
+    
+    function computeErpFilter() {
+      // Base: only polygons/multipolygons
+      const typeFilter = ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]];
+    
+      // Clauses based on has_builder_addr property
+      const clauses = [];
+      if (showBuilder)     clauses.push(["==", ["get", "has_builder_addr"], true]);
+      if (showNonBuilder)  clauses.push(["!=", ["get", "has_builder_addr"], true]); // false or null
+    
+      if (clauses.length === 0) {
+        // Show nothing (use an impossible condition)
+        return ["all", typeFilter, ["==", ["get", "has_builder_addr"], "__never__"]];
+      }
+      if (clauses.length === 1) {
+        return ["all", typeFilter, clauses[0]];
+      }
+      return ["all", typeFilter, ["any", ...clauses]];
+    }
+    
+    function applyErpFilter() {
+      const f = computeErpFilter();
+      map.setFilter("erp-fill", f);
+      map.setFilter("erp-outline", f);
+    }
+    
+    // Wire up the controls
+    const elBuilder = document.getElementById("toggleBuilder");
+    const elOther   = document.getElementById("toggleNonBuilder");
+    const btnOnly   = document.getElementById("showOnlyBuilder");
+    const btnAll    = document.getElementById("showAllErp");
+    
+    if (elBuilder && elOther && btnOnly && btnAll) {
+      elBuilder.addEventListener("change", () => {
+        showBuilder = elBuilder.checked;
+        applyErpFilter();
+      });
+      elOther.addEventListener("change", () => {
+        showNonBuilder = elOther.checked;
+        applyErpFilter();
+      });
+      btnOnly.addEventListener("click", () => {
+        showBuilder = true; showNonBuilder = false;
+        elBuilder.checked = true; elOther.checked = false;
+        applyErpFilter();
+      });
+      btnAll.addEventListener("click", () => {
+        showBuilder = true; showNonBuilder = true;
+        elBuilder.checked = true; elOther.checked = true;
+        applyErpFilter();
+      });
+    }
+    
+    // Apply once on load so current checkbox state is respected
+    applyErpFilter();
+
 
     // 5) Popups — Builder points: show matching_grantor1namefull (+ address if present)
     const bldPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
