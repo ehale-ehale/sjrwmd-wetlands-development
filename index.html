@@ -47,6 +47,62 @@
     <button id="showOnlyBuilder">Show only builder</button>
     <button id="showAllErp">Show all ERPs</button>
   </div>
+    <div class="btns" style="margin-top:6px">
+    <button id="showOnlyBuilder">Show only builder</button>
+    <button id="showAllErp">Show all ERPs</button>
+  </div>
+
+  <div class="hr" style="height:1px;background:#eee;margin:10px 0;"></div>
+    <h3>Flooded days (per pixel, 2013)</h3>
+    <div id="floodBucketList">
+      <div class="row">
+        <span class="swatch" style="background:#edf8fb"></span>
+        <input id="bucket_1_2" type="checkbox" checked>
+        <label for="bucket_1_2">1–2 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#ccece6"></span>
+        <input id="bucket_3_5" type="checkbox" checked>
+        <label for="bucket_3_5">3–5 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#a8ddb5"></span>
+        <input id="bucket_6_10" type="checkbox" checked>
+        <label for="bucket_6_10">6–10 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#7bccc4"></span>
+        <input id="bucket_11_20" type="checkbox" checked>
+        <label for="bucket_11_20">11–20 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#4eb3d3"></span>
+        <input id="bucket_21_50" type="checkbox" checked>
+        <label for="bucket_21_50">21–50 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#2b8cbe"></span>
+        <input id="bucket_51_100" type="checkbox" checked>
+        <label for="bucket_51_100">51–100 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#0868ac"></span>
+        <input id="bucket_101_200" type="checkbox" checked>
+        <label for="bucket_101_200">101–200 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#084081"></span>
+        <input id="bucket_201_300" type="checkbox" checked>
+        <label for="bucket_201_300">201–300 days</label>
+      </div>
+      <div class="row">
+        <span class="swatch" style="background:#4d004b"></span>
+        <input id="bucket_301_364" type="checkbox" checked>
+        <label for="bucket_301_364">301–364 days</label>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -54,7 +110,7 @@
 <script>
   // ---- CONFIG ----
   const PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/wetlands.pmtiles";
-  const FLOOD_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/volusia_flood_days_2013.pmtiles";
+  const FLOOD_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/volusia_flood_days_cells_2013.pmtiles";
   const SOURCE_ID = "wetlands";
   const SOURCE_LAYER = "wetlands";   // tippecanoe -l name (default we used)
   const TYPE_FIELD = "type";
@@ -173,6 +229,32 @@
   // === ERP + Builder from combined PMTiles ===
   // Make sure this points to your uploaded file:
   const COMBINED_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/combined.pmtiles";
+    // Flood-day buckets (must match the "bucket" values in your PMTiles)
+  const FLOOD_BUCKETS = [
+    "1-2",
+    "3-5",
+    "6-10",
+    "11-20",
+    "21-50",
+    "51-100",
+    "101-200",
+    "201-300",
+    "301-364",
+  ];
+
+  // Colors for each bucket (aligned with panel swatches)
+  const FLOOD_BUCKET_COLORS = {
+    "1-2": "#edf8fb",
+    "3-5": "#ccece6",
+    "6-10": "#a8ddb5",
+    "11-20": "#7bccc4",
+    "21-50": "#4eb3d3",
+    "51-100": "#2b8cbe",
+    "101-200": "#0868ac",
+    "201-300": "#084081",
+    "301-364": "#4d004b",
+  };
+
 
   // Layer names (from tippecanoe -L erp_permits:..., -L builder_addresses:...)
   const LAYER_ERP     = "erp_permits";
@@ -231,34 +313,40 @@
       paint: { "line-color": "#8a6f00", "line-width": 0.8 }
     });
 
-    // 4) Add Volusia flood-days source and layer
+    // 4) Add Volusia flood-days source (polygon grid cells)
     map.addSource("volusia_flood_days", {
       type: "vector",
       url: FLOOD_PMTILES_URL,
     });
-  
+
+    // Fill layer: 250 m grid cells, colored by bucket, no black outline
     map.addLayer({
-      id: "volusia_flood_days-circle",
-      type: "circle",
+      id: "volusia_flood_days-fill",
+      type: "fill",
       source: "volusia_flood_days",
-      "source-layer": "volusia_flood_days", // must match -l name in tippecanoe
+      "source-layer": "volusia_flood_days_cells", // must match -l name in tippecanoe
       paint: {
-        "circle-radius": 3,
-        "circle-opacity": 0.9,
-        "circle-stroke-width": 0.4,
-        "circle-stroke-color": "#333333",
-        "circle-color": [
-          "interpolate",
-          ["linear"],
-          ["get", "flood_days"],
-          0, "#f7fbff",
-          5, "#deebf7",
-          20, "#9ecae1",
-          50, "#3182bd",
-          100, "#08519c",
+        "fill-color": [
+          "match",
+          ["get", "bucket"],
+          "1-2",    FLOOD_BUCKET_COLORS["1-2"],
+          "3-5",    FLOOD_BUCKET_COLORS["3-5"],
+          "6-10",   FLOOD_BUCKET_COLORS["6-10"],
+          "11-20",  FLOOD_BUCKET_COLORS["11-20"],
+          "21-50",  FLOOD_BUCKET_COLORS["21-50"],
+          "51-100", FLOOD_BUCKET_COLORS["51-100"],
+          "101-200",FLOOD_BUCKET_COLORS["101-200"],
+          "201-300",FLOOD_BUCKET_COLORS["201-300"],
+          "301-364",FLOOD_BUCKET_COLORS["301-364"],
+          "rgba(0,0,0,0)" // fallback: transparent
         ],
+        "fill-opacity": 0.7,
+        "fill-outline-color": "rgba(0,0,0,0)" // no visible outline
       },
+      // we'll update this filter from the bucket checkboxes
+      filter: ["in", ["get", "bucket"], ["literal", FLOOD_BUCKETS]]
     });
+
 
     // 5) Popups — ERP polygons:
     //    Always show: permit_status, applicant, cur_prmt_id, link, prmt_proj_nm, created_date
@@ -405,10 +493,50 @@
     });
 
     // Cursor affordance
-    ["builder-points","erp-fill","erp-outline"].forEach(id => {
+    ["builder-points","erp-fill","erp-outline","volusia_flood_days-fill"].forEach(id => {
       map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer");
       map.on("mouseleave", id, () => map.getCanvas().style.cursor = "");
     });
+
+    // -------- Flood-day buckets visibility toggles ----------
+    let floodSelectedBuckets = new Set(FLOOD_BUCKETS);
+
+    function applyFloodFilter() {
+      const list = Array.from(floodSelectedBuckets);
+      const filter = ["in", ["get", "bucket"], ["literal", list]];
+      map.setFilter("volusia_flood_days-fill", filter);
+    }
+
+    // Wire up flood bucket checkboxes
+    const bucketIdMap = {
+      "1-2":    "bucket_1_2",
+      "3-5":    "bucket_3_5",
+      "6-10":   "bucket_6_10",
+      "11-20":  "bucket_11_20",
+      "21-50":  "bucket_21_50",
+      "51-100": "bucket_51_100",
+      "101-200":"bucket_101_200",
+      "201-300":"bucket_201_300",
+      "301-364":"bucket_301_364",
+    };
+
+    Object.entries(bucketIdMap).forEach(([bucket, elemId]) => {
+      const checkbox = document.getElementById(elemId);
+      if (!checkbox) return;
+
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          floodSelectedBuckets.add(bucket);
+        } else {
+          floodSelectedBuckets.delete(bucket);
+        }
+        applyFloodFilter();
+      });
+    });
+
+    // Apply once on load so the initial state (all checked) is used
+    applyFloodFilter();
+
   });
 </script>
 </body>
