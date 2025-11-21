@@ -54,6 +54,7 @@
 <script>
   // ---- CONFIG ----
   const PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/wetlands.pmtiles";
+  const FLOOD_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/volusia_flood_days_2013.pmtiles";
   const SOURCE_ID = "wetlands";
   const SOURCE_LAYER = "wetlands";   // tippecanoe -l name (default we used)
   const TYPE_FIELD = "type";
@@ -230,7 +231,36 @@
       paint: { "line-color": "#8a6f00", "line-width": 0.8 }
     });
 
-    // 4) Popups — ERP polygons:
+    // 4) Add Volusia flood-days source and layer
+    map.addSource("volusia_flood_days", {
+      type: "vector",
+      url: FLOOD_PMTILES_URL,
+    });
+  
+    map.addLayer({
+      id: "volusia_flood_days-circle",
+      type: "circle",
+      source: "volusia_flood_days",
+      "source-layer": "volusia_flood_days", // must match -l name in tippecanoe
+      paint: {
+        "circle-radius": 3,
+        "circle-opacity": 0.9,
+        "circle-stroke-width": 0.4,
+        "circle-stroke-color": "#333333",
+        "circle-color": [
+          "interpolate",
+          ["linear"],
+          ["get", "flood_days"],
+          0, "#f7fbff",
+          5, "#deebf7",
+          20, "#9ecae1",
+          50, "#3182bd",
+          100, "#08519c",
+        ],
+      },
+    });
+
+    // 5) Popups — ERP polygons:
     //    Always show: permit_status, applicant, cur_prmt_id, link, prmt_proj_nm, created_date
     //    If has_builder_addr is true, also show builder_names
     const erpPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
@@ -345,7 +375,7 @@
     applyErpFilter();
 
 
-    // 5) Popups — Builder points: show matching_grantor1namefull (+ address if present)
+    // 6) Popups — Builder points: show matching_grantor1namefull (+ address if present)
     const bldPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
 
     // Replace your builderHTML function with this:
