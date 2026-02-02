@@ -47,13 +47,17 @@
     <button id="showOnlyBuilder">Show only builder</button>
     <button id="showAllErp">Show all ERPs</button>
   </div>
-    <div class="btns" style="margin-top:6px">
-    <button id="showOnlyBuilder">Show only builder</button>
-    <button id="showAllErp">Show all ERPs</button>
-  </div>
 
   <div class="hr" style="height:1px;background:#eee;margin:10px 0;"></div>
-    <h3>Flooded days (per pixel, 2013)</h3>
+    <h3>Flooded days (per pixel)</h3>
+
+<div class="row" style="margin:6px 0 10px 0;">
+  <label for="floodYear" style="min-width:44px;color:#444;">Year</label>
+  <select id="floodYear" style="padding:4px 6px;border-radius:6px;border:1px solid #bbb;">
+    <!-- options injected by JS -->
+  </select>
+  <span id="floodYearLabel" style="color:#666;"></span>
+</div>
     <div id="floodBucketList">
       <div class="row">
         <span class="swatch" style="background:#edf8fb"></span>
@@ -110,7 +114,14 @@
 <script>
   // ---- CONFIG ----
   const PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/wetlands.pmtiles";
-  const FLOOD_PMTILES_URL = "pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/volusia_flood_days_cells_2013.pmtiles";
+  // Flood years available
+  const FLOOD_YEARS = Array.from({length: 13}, (_, i) => 2013 + i); // 2013..2025
+  const DEFAULT_FLOOD_YEAR = 2013;
+
+  function floodPmtilesUrl(year){
+    // Assumes files are named like: volusia_flood_days_cells_2013.pmtiles ... _2025.pmtiles
+    return `pmtiles://https://ehale-ehale.github.io/sjrwmd-wetlands-development/volusia_flood_days_cells_${year}.pmtiles`;
+  }
   const SOURCE_ID = "wetlands";
   const SOURCE_LAYER = "wetlands";   // tippecanoe -l name (default we used)
   const TYPE_FIELD = "type";
@@ -313,42 +324,103 @@
       paint: { "line-color": "#8a6f00", "line-width": 0.8 }
     });
 
-    // 4) Add Volusia flood-days source (polygon grid cells)
-    map.addSource("volusia_flood_days", {
-      type: "vector",
-      url: FLOOD_PMTILES_URL,
-    });
+    // 4) Flood-days layer (single layer; swap year via dropdown)
+    const FLOOD_SOURCE_ID = "volusia_flood_days";
+    const FLOOD_LAYER_ID  = "volusia_flood_days-fill";
+    const FLOOD_SOURCE_LAYER = "volusia_flood_days_cells"; // must match -l name in tippecanoe
 
-    // Fill layer: 250 m grid cells, colored by bucket, no black outline
-    map.addLayer({
-      id: "volusia_flood_days-fill",
-      type: "fill",
-      source: "volusia_flood_days",
-      "source-layer": "volusia_flood_days_cells", // must match -l name in tippecanoe
-      paint: {
-        "fill-color": [
-          "match",
-          ["get", "bucket"],
-          "1-2",    FLOOD_BUCKET_COLORS["1-2"],
-          "3-5",    FLOOD_BUCKET_COLORS["3-5"],
-          "6-10",   FLOOD_BUCKET_COLORS["6-10"],
-          "11-20",  FLOOD_BUCKET_COLORS["11-20"],
-          "21-50",  FLOOD_BUCKET_COLORS["21-50"],
-          "51-100", FLOOD_BUCKET_COLORS["51-100"],
-          "101-200",FLOOD_BUCKET_COLORS["101-200"],
-          "201-300",FLOOD_BUCKET_COLORS["201-300"],
-          "301-364",FLOOD_BUCKET_COLORS["301-364"],
-          "rgba(0,0,0,0)" // fallback: transparent
-        ],
-        "fill-opacity": 0.7,
-        "fill-outline-color": "rgba(0,0,0,0)" // no visible outline
-      },
-      // we'll update this filter from the bucket checkboxes
-      filter: ["in", ["get", "bucket"], ["literal", FLOOD_BUCKETS]]
-    });
+    let currentFloodYear = DEFAULT_FLOOD_YEAR;
 
+    // Keep bucket selections when switching years
+    let floodSelectedBuckets = new Set(FLOOD_BUCKETS);
 
-    // 5) Popups — ERP polygons:
+    const floodEnter = () => (map.getCanvas().style.cursor = "pointer");
+    const floodLeave = () => (map.getCanvas().style.cursor = "");
+
+    function addFloodLayerForYear(year){
+      // Remove old layer/source if present
+      if (map.getLayer(FLOOD_LAYER_ID)) map.removeLayer(FLOOD_LAYER_ID);
+      if (map.getSource(FLOOD_SOURCE_ID)) map.removeSource(FLOOD_SOURCE_ID);
+
+      // Add source for selected year
+      map.addSource(FLOOD_SOURCE_ID, {
+        type: "vector",
+        url: floodPmtilesUrl(year),
+      });
+
+      // Add layer
+      map.addLayer({
+        id: FLOOD_LAYER_ID,
+        type: "fill",
+        source: FLOOD_SOURCE_ID,
+        "source-layer": FLOOD_SOURCE_LAYER,
+        paint: {
+          "fill-color": [
+            "match",
+            ["get", "bucket"],
+            "1-2",     FLOOD_BUCKET_COLORS["1-2"],
+            "3-5",     FLOOD_BUCKET_COLORS["3-5"],
+            "6-10",    FLOOD_BUCKET_COLORS["6-10"],
+            "11-20",   FLOOD_BUCKET_COLORS["11-20"],
+            "21-50",   FLOOD_BUCKET_COLORS["21-50"],
+            "51-100",  FLOOD_BUCKET_COLORS["51-100"],
+            "101-200", FLOOD_BUCKET_COLORS["101-200"],
+            "201-300", FLOOD_BUCKET_COLORS["201-300"],
+            "301-364", FLOOD_BUCKET_COLORS["301-364"],
+            "rgba(0,0,0,0)"
+          ],
+          "fill-opacity": 0.7,
+          "fill-outline-color": "rgba(0,0,0,0)"
+        },
+        filter: ["in", ["get", "bucket"], ["literal", Array.from(floodSelectedBuckets)]]
+      });
+
+      // Cursor affordance for the (re)created layer
+      try { map.off("mouseenter", FLOOD_LAYER_ID, floodEnter); } catch(e) {}
+      try { map.off("mouseleave", FLOOD_LAYER_ID, floodLeave); } catch(e) {}
+      map.on("mouseenter", FLOOD_LAYER_ID, floodEnter);
+      map.on("mouseleave", FLOOD_LAYER_ID, floodLeave);
+    }
+
+    function applyFloodFilter() {
+      if (!map.getLayer(FLOOD_LAYER_ID)) return;
+      const list = Array.from(floodSelectedBuckets);
+      const filter = ["in", ["get", "bucket"], ["literal", list]];
+      map.setFilter(FLOOD_LAYER_ID, filter);
+    }
+
+    function initFloodYearDropdown(){
+      const sel = document.getElementById("floodYear");
+      const label = document.getElementById("floodYearLabel");
+      if (!sel) return;
+
+      sel.innerHTML = "";
+      FLOOD_YEARS.forEach(y => {
+        const opt = document.createElement("option");
+        opt.value = String(y);
+        opt.textContent = String(y);
+        sel.appendChild(opt);
+      });
+
+      sel.value = String(currentFloodYear);
+      if (label) label.textContent = `showing ${currentFloodYear}`;
+
+      sel.addEventListener("change", () => {
+        const year = Number(sel.value);
+        if (!Number.isFinite(year) || year === currentFloodYear) return;
+        currentFloodYear = year;
+
+        addFloodLayerForYear(currentFloodYear);
+        applyFloodFilter(); // keep current bucket toggles
+        if (label) label.textContent = `showing ${currentFloodYear}`;
+      });
+    }
+
+    // Initial flood layer + dropdown wiring
+    addFloodLayerForYear(currentFloodYear);
+    initFloodYearDropdown();
+
+// 5) Popups — ERP polygons:
     //    Always show: permit_status, applicant, cur_prmt_id, link, prmt_proj_nm, created_date
     //    If has_builder_addr is true, also show builder_names
     const erpPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: true });
@@ -499,13 +571,7 @@
     });
 
     // -------- Flood-day buckets visibility toggles ----------
-    let floodSelectedBuckets = new Set(FLOOD_BUCKETS);
-
-    function applyFloodFilter() {
-      const list = Array.from(floodSelectedBuckets);
-      const filter = ["in", ["get", "bucket"], ["literal", list]];
-      map.setFilter("volusia_flood_days-fill", filter);
-    }
+    // Bucket state is kept in floodSelectedBuckets; applyFloodFilter() is defined above.
 
     // Wire up flood bucket checkboxes
     const bucketIdMap = {
@@ -525,11 +591,8 @@
       if (!checkbox) return;
 
       checkbox.addEventListener("change", () => {
-        if (checkbox.checked) {
-          floodSelectedBuckets.add(bucket);
-        } else {
-          floodSelectedBuckets.delete(bucket);
-        }
+        if (checkbox.checked) floodSelectedBuckets.add(bucket);
+        else floodSelectedBuckets.delete(bucket);
         applyFloodFilter();
       });
     });
